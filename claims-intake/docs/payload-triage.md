@@ -19,7 +19,7 @@ Fill one row per payload. Where a payload is accepted, leave the rule, code, and
 | EDGE-08 | rejected | -    | `UNINTERPRETABLE_REQUEST` | 400    |
 | EDGE-09 | rejected | V-5  | `TYPE_NOT_COVERED`        | 422    |
 | EDGE-10 | rejected | V-7  | `POLICY_CANCELLED`        | 422    |
-| EDGE-11 | rejected | -    | `UNINTERPRETABLE_REQUEST` | 400    |
+| EDGE-11 | rejected | V-5  | `TYPE_NOT_COVERED`        | 422    |
 | EDGE-12 | rejected | -    | `UNINTERPRETABLE_REQUEST` | 400    |
 
 
@@ -33,54 +33,59 @@ A decision recorded here and nowhere else has not been made. Amend `docs/api-con
 
 ### Decision 1
 
-**Payload.** EDGE-04 (loss on the cancellation date).
+**Payload.** EDGE-07 (case-sensitive policy number).
 
-**The ambiguity.** A
-loss still inside the original term could be read as accepted. Once a
-cancel rule exists, it was still open whether a loss *on*
-`cancellation_date` is covered.
+**The ambiguity.** The master holds `MOT-4471`. The payload
+is `mot-4471`. V-1 and 2.2 never said whether the match is
+case-sensitive.
 
-**Decision.** Reject. V-7, `POLICY_CANCELLED`, 422.
+**Decision.** Reject. V-1, `POLICY_NOT_FOUND`, 422.
 
-**Authority.** WI-0158 AC-1 and AC-2: cancellation starts at the
-beginning of that date; a loss that day is not covered.
+**Authority.** Section 2.2: identifier as held in the policy
+master. V-1: the number must exist.
 
-**Rejected alternative.** Accept because `loss_date` ≤ `expiry_date` and `loss_date` = `cancellation_date`
+**Rejected alternative.** Fold case and accept. That is not
+the identifier the master holds.
 
-**Contract amended.** 4.2 V-7: `loss_date` < `cancellation_date`. Boundary note: a loss on the cancellation date is not covered. (Nothing Changed)
+**Contract amended.** 2.2 and 4.2 V-1: lookup is exact; case
+is significant.
 
 ### Decision 2
 
-**Payload.** EDGE-05 (before inception and above the limit).
+**Payload.** EDGE-11 (invalid claim type).
 
-**The ambiguity.** Two rules fail. The shipped 4.1 only spelled out
-V-1's short circuit, so the caller could be given V-2, V-4, or both.
+**The ambiguity.** `flood` is a string and not in 2.3. 2.4's
+400 list is JSON, missing field, wrong type, or extra field.
+Open whether that is 400 or V-5.
 
-**Decision.** One code: the first failure in 4.1. That is V-2,
-`LOSS_BEFORE_INCEPTION`, 422.
+**Decision.** Reject. V-5, `TYPE_NOT_COVERED`, 422.
 
-**Authority.** Section 4.1: one code, stop at the first failure. V-2
-precedes V-4. 
+**Authority.** Section 2.4: the 400 list is closed;
+interpreted but not admissible is 422. Section 2.3:
+admissibility of claim type is V-5.
 
-**Rejected alternative.** Return `AMOUNT_EXCEEDS_LIMIT`, or a list of
-codes. The caller sees one reason; the later rule is not evaluated.
+**Rejected alternative.** `UNINTERPRETABLE_REQUEST` 400.
+The field type is string; `flood` was interpreted.
 
-**Contract amended.** 4.1: order V-1, V-7, V-2, V-3, V-4, V-5, V-6; first failure only. (Nothing Changed)
+**Contract amended.** 2.3 and 4.2 V-5: a `claim_type` outside
+2.3 fails V-5. It is not a 400.
 
 ### Decision 3
 
-**Payload.** EDGE-10 (after cancellation and after original expiry).
+**Payload.** EDGE-12 (three-decimal amount).
 
-**The ambiguity.** Both V-3 and V-7 fail. Ascending IDs evaluate V-3
-first and return `LOSS_AFTER_EXPIRY`.
+**The ambiguity.** 2.2 types the field as decimal, USD, two
+decimal places. Three fractional digits could be accepted as
+a decimal, or refused as the wrong type.
 
-**Decision.** `POLICY_CANCELLED`, 422. V-7 runs before V-3.
+**Decision.** Reject. `UNINTERPRETABLE_REQUEST`, 400.
 
-**Authority.** WI-0158 AC-4: tell the handler the policy was cancelled.
-Expiry sends them to the wrong system.
+**Authority.** Section 2.2: USD, two decimal places. Section
+2.4: wrong type is 400.
 
-**Rejected alternative.** `LOSS_AFTER_EXPIRY` from identifier order.
-True that the date is after expiry; the wrong fact to report.
+**Rejected alternative.** Parse at full scale and accept, or
+round. The amount is under the limit either way; that records
+millicents or changes the figure.
 
-**Contract amended.** 4.1 evaluates V-7 before V-3. 4.2: when both  
-would fail, return `POLICY_CANCELLED`. (Nothing Changed)
+**Contract amended.** 2.2: `estimated_amount` is scale 2. A
+different scale is the wrong type (2.4). Do not round.

@@ -43,6 +43,10 @@ Content-Type: application/json
 | `description`      | string  | no       | Free text. Absent and `null` are equivalent.                  |
 
 
+`policy_number` matching is exact; case is significant.
+
+`estimated_amount` is a decimal of scale 2. A different scale is the wrong type (section 2.4). The service does not round or truncate.
+
 The service rejects a body carrying a field not listed above. A misspelled field name is a defect in the caller's code, and accepting the payload with the field ignored would record a notification built from data the caller did not send.
 
 ### 2.3 Claim type vocabulary
@@ -51,9 +55,11 @@ The service rejects a body carrying a field not listed above. A misspelled field
 
 Which of these are admissible on a given notification depends on the product the policy is written on. The vocabulary is fixed by this contract. The permitted subset is a property of the policy record and is evaluated by rule `V-5`.
 
+A `claim_type` that is a string but not in this list is still interpreted. It fails V-5. It is not `UNINTERPRETABLE_REQUEST`.
+
 ### 2.4 Well formed against acceptable
 
-A request that cannot be interpreted is refused with status `400`. This means the body was not valid JSON, a required field was absent, a field carried a value of the wrong type, or a field was present that this contract does not define. The caller's code is wrong.
+A request that cannot be interpreted is refused with status `400`. This means the body was not valid JSON, a required field was absent, a field carried a value of the wrong type, or a field was present that this contract does not define. The caller's code is wrong. An `estimated_amount` that is not a decimal of scale 2 is the wrong type. A string `claim_type` that is not in section 2.3 is not.
 
 A request that was interpreted and whose content is not admissible is refused with status `422`. The caller's data is wrong, and a person needs to see the reason.
 
@@ -108,7 +114,7 @@ evaluation continues at V-2.
 
 | ID  | Condition                                                                                     | Code                     | Status |
 | --- | --------------------------------------------------------------------------------------------- | ------------------------ | ------ |
-| V-1 | `policy_number` exists in the policy master                                                   | `POLICY_NOT_FOUND`       | 422    |
+| V-1 | `policy_number` exists in the policy master (exact, case-sensitive)                           | `POLICY_NOT_FOUND`       | 422    |
 | V-2 | `loss_date` >= policy `effective_date`                                                        | `LOSS_BEFORE_INCEPTION`  | 422    |
 | V-3 | `loss_date` <= policy `expiry_date`                                                           | `LOSS_AFTER_EXPIRY`      | 422    |
 | V-4 | `estimated_amount` <= policy `limit`                                                          | `AMOUNT_EXCEEDS_LIMIT`   | 422    |
@@ -122,7 +128,9 @@ Boundaries are as written. A loss on the inception date is covered
 on the cancellation date is not covered (WI-0158, AC-2): V-7 uses a
 strict inequality, so `loss_date` < `cancellation_date` is required to
 pass. When both V-3 and V-7 would fail, the order in 4.1 returns
-`POLICY_CANCELLED`.
+`POLICY_CANCELLED`. V-1 lookup is exact; case is significant. A
+`claim_type` outside section 2.3 fails V-5; it is not a 400. V-4
+compares only a well-formed scale-2 amount to the limit.
 
 ## 5. Error envelope
 

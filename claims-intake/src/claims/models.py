@@ -10,8 +10,8 @@ Day 2 assignment. Implement these against `docs/api-contract.md` sections 2 and 
 
 from __future__ import annotations
 
-from pydantic import BaseModel
-
+from pydantic import BaseModel, Field
+from decimal import Decimal
 
 class NotificationRequest(BaseModel):
     """A first notice of loss as submitted by the claims portal.
@@ -27,6 +27,11 @@ class NotificationRequest(BaseModel):
     """
 
     policy_number: str
+    
+    loss_date: date
+    claim_type: claim #TODO: enum to be implemented
+    estimated_amount: Decimal = Field(decimal_places=2)
+    description: str | None = None
 
 
 class Policy(BaseModel):
