@@ -10,9 +10,12 @@ Day 2 assignment. Implement these against `docs/api-contract.md` sections 2 and 
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, ConfigDict
-from decimal import Decimal
+from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 
 class NotificationRequest(BaseModel):
     """A first notice of loss as submitted by the claims portal.
@@ -39,9 +42,29 @@ class Policy(BaseModel):
     Built from the `PolicyRecord` the policy client returns. The fields the rules
     compare against are the reason this model exists.
 
-    Day 2 assignment: declare the fields.
+    `cancellation_date` is `date | None` and has no default. An uncancelled
+    policy carries `None` (WI-0158 AC-3). Comparing `loss_date` to it without
+    first handling absence is a type error, so V-7 cannot be written as a
+    comparison against a sentinel date.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
+    policy_number: str = Field(min_length=1)
+    product: str
+    effective_date: date
+    expiry_date: date
+    cancellation_date: date | None
+    limit: Decimal = Field(decimal_places=2)
+    permitted_claim_types: tuple[str, ...]
+
+    @field_validator("limit")
+    @classmethod
+    def limit_is_scale_2(cls, value: Decimal) -> Decimal:
+        exponent = value.as_tuple().exponent
+        if not isinstance(exponent, int) or exponent != -2:
+            raise ValueError("limit must have exactly two decimal places")
+        return value
 
 class RecordedNotification(BaseModel):
     """A notification that passed every rule and was written.
@@ -51,3 +74,16 @@ class RecordedNotification(BaseModel):
 
     Day 2 assignment: declare the fields.
     """
+
+
+@dataclass(frozen=True)
+class RuleFailure:
+    """A named rule refusal: the rule id and the stable contract code.
+
+    These are kept as separate fields so a caller can branch on `code` and still
+    report which rule produced it. The object is immutable so a later layer
+    cannot rewrite the decision.
+    """
+
+    rule: str
+    code: str
