@@ -10,8 +10,9 @@ Day 2 assignment. Implement these against `docs/api-contract.md` sections 2 and 
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from decimal import Decimal
+from datetime import date
 
 class NotificationRequest(BaseModel):
     """A first notice of loss as submitted by the claims portal.
@@ -25,14 +26,12 @@ class NotificationRequest(BaseModel):
     to read. Every other field, and every constraint on every field including this
     one, is Day 2's work.
     """
-
-    policy_number: str
-    
+    model_config = ConfigDict(extra="forbid")
+    policy_number: str = Field(min_length=1)
     loss_date: date
-    claim_type: claim #TODO: enum to be implemented
+    claim_type: str = Field(min_length=1)
     estimated_amount: Decimal = Field(decimal_places=2)
     description: str | None = None
-
 
 class Policy(BaseModel):
     """A policy as this service works with it.
