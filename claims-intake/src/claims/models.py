@@ -13,8 +13,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import NewType
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+RuleId = NewType("RuleId", str)
+ErrorCode = NewType("ErrorCode", str)
 
 
 class NotificationRequest(BaseModel):
@@ -33,8 +37,24 @@ class NotificationRequest(BaseModel):
     policy_number: str = Field(min_length=1)
     loss_date: date
     claim_type: str = Field(min_length=1)
-    estimated_amount: Decimal = Field(decimal_places=2)
+    estimated_amount: Decimal = Field(gt=0, decimal_places=2)
     description: str | None = None
+
+    @field_validator("loss_date", mode="before")
+    @classmethod
+    def loss_date_is_calendar_date(cls, value: object) -> object:
+        if isinstance(value, str) and (len(value) != 10 or value[4] != "-" or value[7] != "-"):
+            raise ValueError("loss_date must be a calendar date YYYY-MM-DD")
+        return value
+
+    @field_validator("estimated_amount")
+    @classmethod
+    def estimated_amount_is_scale_2(cls, value: Decimal) -> Decimal:
+        exponent = value.as_tuple().exponent
+        if not isinstance(exponent, int) or exponent != -2:
+            raise ValueError("estimated_amount must have exactly two decimal places")
+        return value
+
 
 class Policy(BaseModel):
     """A policy as this service works with it.
@@ -70,20 +90,23 @@ class RecordedNotification(BaseModel):
     """A notification that passed every rule and was written.
 
     Carries the claim reference issued at the time it was recorded. Contract
-    section 3 fixes the reference format.
-
-    Day 2 assignment: declare the fields.
+    section 3 fixes the reference format. Issuing that value is the repository's
+    job; this model only holds it.
     """
+
+    claim_reference: str
+    notification: NotificationRequest
 
 
 @dataclass(frozen=True)
 class RuleFailure:
     """A named rule refusal: the rule id and the stable contract code.
 
-    These are kept as separate fields so a caller can branch on `code` and still
-    report which rule produced it. The object is immutable so a later layer
-    cannot rewrite the decision.
+    `rule` is a `RuleId` (`V-1`, `V-2`, …). `code` is an `ErrorCode`
+    (`POLICY_NOT_FOUND`, …). Separate NewTypes mean a rule identifier cannot be
+    passed where an error code is expected. Frozen so a later layer cannot
+    rewrite the decision.
     """
 
-    rule: str
-    code: str
+    rule: RuleId
+    code: ErrorCode

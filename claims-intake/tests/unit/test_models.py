@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from claims.models import NotificationRequest, Policy, RuleFailure
+from claims.models import ErrorCode, NotificationRequest, Policy, RuleFailure, RuleId
 from claims.policy_client import PolicyRecord, StubPolicyClient
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -208,7 +208,7 @@ def test_policy_rejects_missing_field(field: str) -> None:
     ],
 )
 def test_rule_failure_carries_rule_and_code_separately(rule: str, code: str) -> None:
-    failure = RuleFailure(rule=rule, code=code)
+    failure = RuleFailure(rule=RuleId(rule), code=ErrorCode(code))
     assert failure.rule == rule
     assert failure.code == code
     with pytest.raises(FrozenInstanceError):
