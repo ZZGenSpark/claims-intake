@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from claims.models import ErrorCode, NotificationRequest, Policy, RuleFailure, RuleId
+from claims.models import ClaimType, ErrorCode, NotificationRequest, Policy, RuleFailure, RuleId
 from claims.service import evaluate_notification
 
 
@@ -89,6 +89,71 @@ def test_v4_amount_within_limit(amount: Decimal, expect_failure: bool) -> None:
     )
     if expect_failure:
         _assert_rule_failure(result, "V-4", "AMOUNT_EXCEEDS_LIMIT")
+    else:
+        assert result is None
+
+
+@pytest.mark.parametrize(
+    ("claim_type", "expect_failure"),
+    [
+        pytest.param("collision", False, id="type_in_subset"),
+        pytest.param("glass", True, id="type_not_in_subset"),
+    ],
+)
+def test_v5_claim_type_permitted(claim_type: ClaimType, expect_failure: bool) -> None:
+    result = evaluate_notification(_notification(claim_type=claim_type), _policy())
+    if expect_failure:
+        _assert_rule_failure(result, "V-5", "TYPE_NOT_COVERED")
+    else:
+        assert result is None
+
+
+@pytest.mark.parametrize(
+    ("policy", "loss_date", "expect_failure"),
+    [
+        pytest.param(
+            _policy(cancellation_date=date(2026, 6, 1)),
+            date(2026, 5, 31),
+            False,
+            id="before_cancellation",
+        ),
+        pytest.param(
+            _policy(cancellation_date=date(2026, 6, 1)),
+            date(2026, 6, 1),
+            True,
+            id="on_cancellation",
+        ),
+        pytest.param(
+            _policy(cancellation_date=date(2026, 6, 1)),
+            date(2026, 6, 2),
+            True,
+            id="after_cancellation",
+        ),
+        pytest.param(
+            _policy(cancellation_date=None),
+            date(2026, 4, 2),
+            False,
+            id="cancellation_absent",
+        ),
+        pytest.param(
+            _policy(
+                cancellation_date=date(2026, 6, 1),
+                expiry_date=date(2026, 5, 31),
+            ),
+            date(2026, 7, 1),
+            True,
+            id="cancelled_and_after_expiry",
+        ),
+    ],
+)
+def test_v7_loss_before_cancellation(
+    policy: Policy,
+    loss_date: date,
+    expect_failure: bool,
+) -> None:
+    result = evaluate_notification(_notification(loss_date=loss_date), policy)
+    if expect_failure:
+        _assert_rule_failure(result, "V-7", "POLICY_CANCELLED")
     else:
         assert result is None
 
