@@ -141,7 +141,14 @@ def evaluate_claim_type_covered(
     policy: Policy,
 ) -> ValidationOutcome:
     """V-5. The claim type must be permitted on the policy's product."""
-    return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
+    if notification.claim_type in policy.permitted_claim_types:
+        return ValidationOutcome.ok()
+    return ValidationOutcome.failed(
+        rule="V-5",
+        code="TYPE_NOT_COVERED",
+        claim_type=notification.claim_type,
+        permitted_claim_types=policy.permitted_claim_types,
+    )
 
 
 def evaluate_loss_before_cancellation(
