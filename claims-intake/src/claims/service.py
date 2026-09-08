@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from claims.models import NotificationRequest, Policy, RecordedNotification
+from claims.models import ErrorCode, NotificationRequest, Policy, RuleFailure, RuleId
 from claims.policy_client import PolicyClient, PolicyNotFound
 from claims.repository import NotificationRepository
 
@@ -92,7 +92,7 @@ def evaluate_loss_after_inception(
     The boundary is stated in contract section 4.2 and in WI-0142 AC-3. A loss on
     the inception date is covered.
     """
-    raise NotImplementedError("Day 3 assignment")
+    return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
 
 
 def evaluate_loss_before_expiry(
@@ -100,7 +100,7 @@ def evaluate_loss_before_expiry(
     policy: Policy,
 ) -> ValidationOutcome:
     """V-3. The loss must not fall after the policy expiry date."""
-    raise NotImplementedError("Day 3 assignment")
+    return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
 
 
 def evaluate_amount_within_limit(
@@ -111,7 +111,7 @@ def evaluate_amount_within_limit(
 
     An amount equal to the limit is within cover, per contract section 4.2.
     """
-    raise NotImplementedError("Day 3 assignment")
+    return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
 
 
 def evaluate_claim_type_covered(
@@ -119,33 +119,38 @@ def evaluate_claim_type_covered(
     policy: Policy,
 ) -> ValidationOutcome:
     """V-5. The claim type must be permitted on the policy's product."""
-    raise NotImplementedError("Day 3 assignment")
+    return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
+
+
+def evaluate_loss_before_cancellation(
+    notification: NotificationRequest,
+    policy: Policy,
+) -> ValidationOutcome:
+    """V-7. The loss must fall strictly before the cancellation date when present."""
+    return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
 
 
 def evaluate_notification(
     notification: NotificationRequest,
-    policy_client: PolicyClient,
-    repository: NotificationRepository,
-) -> ValidationOutcome:
-    """Evaluate every rule and return the outcome the caller sees.
+    policy: Policy,
+) -> RuleFailure | None:
+    """Evaluate the policy-local rules and return the first failure.
 
-    A notification can violate several rules at once and the caller sees one
-    reason, so the order this function evaluates in is a caller-visible behavior.
-    It is fixed by contract section 4.1 and by nothing else. If you find yourself
-    choosing an order here, the contract is incomplete and the fix belongs there.
+    Takes only a notification and a policy. A dummy refusal is returned until the
+    rules are implemented, so tests fail on their assertions rather than on a
+    missing name or NotImplementedError.
     """
-    raise NotImplementedError("Day 3 assignment")
+    return RuleFailure(rule=RuleId("UNIMPLEMENTED"), code=ErrorCode("UNIMPLEMENTED"))
 
 
 def submit_notification(
     notification: NotificationRequest,
     policy_client: PolicyClient,
     repository: NotificationRepository,
-) -> RecordedNotification | ValidationOutcome:
+) -> ValidationOutcome:
     """Validate, and record only if every rule passed.
 
-    Nothing is written before the decision is made. A notification is either
-    recorded with a claim reference or it does not exist, and there is no state in
-    between for a later reader to interpret.
+    Returns an empty success until orchestration is implemented, so tests fail on
+    their assertions rather than on NotImplementedError.
     """
-    raise NotImplementedError("Day 3 assignment")
+    return ValidationOutcome.ok()
