@@ -127,8 +127,22 @@ def evaluate_loss_before_cancellation(
     notification: NotificationRequest,
     policy: Policy,
 ) -> ValidationOutcome:
-    """V-7. The loss must fall strictly before the cancellation date when present."""
-    return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
+    """V-7. The loss must fall strictly before the cancellation date when present.
+
+    When cancellation_date is absent the rule does not apply (WI-0158 AC-3) and
+    evaluation continues. Cover ends at the start of the cancellation date, so a
+    loss on that date fails (section 4.2; WI-0158 AC-2).
+    """
+    if policy.cancellation_date is None:
+        return ValidationOutcome.ok()
+    if notification.loss_date < policy.cancellation_date:
+        return ValidationOutcome.ok()
+    return ValidationOutcome.failed(
+        rule="V-7",
+        code="POLICY_CANCELLED",
+        loss_date=notification.loss_date,
+        cancellation_date=policy.cancellation_date,
+    )
 
 
 def evaluate_duplicate_notification(
