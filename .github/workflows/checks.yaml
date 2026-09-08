@@ -1,0 +1,29 @@
+name: checks
+
+on: [pull_request, pull]
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fetch repository
+        run: |
+          git init
+          git fetch --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "${GITHUB_REF}"
+          git checkout FETCH_HEAD
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        working-directory: claims-intake
+        run: uv sync --frozen --python 3.12
+      - name: Ruff
+        working-directory: claims-intake
+        run: uv run ruff check .
+      - name: Mypy
+        working-directory: claims-intake
+        run: uv run mypy
+      - name: Pytest
+        working-directory: claims-intake
+        run: uv run pytest

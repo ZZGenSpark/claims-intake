@@ -10,5 +10,5 @@
     "PYTHONDONTWRITEBYTECODE": "1",
     "SERVICE_ENV": "local"
   },
-  "postCreateCommand": "uv sync --frozen"
+  "postCreateCommand": "curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\"$HOME/.local/bin:$PATH\" && uv sync --frozen"
 }
