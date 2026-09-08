@@ -208,7 +208,18 @@ def evaluate_duplicate_notification(
     Takes the repository because a duplicate is a fact about what was written,
     not a fact about the policy. This function is not in POLICY_RULES.
     """
-    return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
+    existing = repository.find_matching(
+        notification.policy_number,
+        notification.loss_date,
+        notification.claim_type,
+    )
+    if existing is None:
+        return ValidationOutcome.ok()
+    return ValidationOutcome.failed(
+        rule="V-6",
+        code="DUPLICATE_NOTIFICATION",
+        claim_reference=existing.claim_reference,
+    )
 
 
 # Where V-6 lives (contract section 4.1).
@@ -279,6 +290,10 @@ def submit_notification(
     failure = evaluate_notification(notification, _policy_from_record(record))
     if failure is not None:
         return ValidationOutcome.failed(rule=failure.rule, code=failure.code)
+
+    duplicate = evaluate_duplicate_notification(notification, repository)
+    if not duplicate.passed:
+        return duplicate
 
     repository.record(notification)
     return ValidationOutcome.ok()
