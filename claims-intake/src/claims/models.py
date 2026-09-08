@@ -13,12 +13,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import NewType
+from typing import Literal, NewType
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 RuleId = NewType("RuleId", str)
 ErrorCode = NewType("ErrorCode", str)
+
+# Section 2.3. The type, not a validator, so a misspelled value cannot reach V-5.
+ClaimType = Literal["collision", "theft", "glass", "liability", "weather"]
+
+# Section 3. Issuing the value is the repository's job; the model only holds it.
+CLAIM_REFERENCE_PATTERN = r"^CLM-\d{4}-\d{6}$"
 
 
 class NotificationRequest(BaseModel):
@@ -33,16 +39,19 @@ class NotificationRequest(BaseModel):
     to read. Every other field, and every constraint on every field including this
     one, is Day 2's work.
     """
+
     model_config = ConfigDict(extra="forbid")
+
     policy_number: str = Field(min_length=1)
     loss_date: date
-    claim_type: str = Field(min_length=1)
+    claim_type: ClaimType
     estimated_amount: Decimal = Field(gt=0, decimal_places=2)
     description: str | None = None
 
     @field_validator("loss_date", mode="before")
     @classmethod
     def loss_date_is_calendar_date(cls, value: object) -> object:
+        # Pydantic accepts datetimes and other ISO shapes; section 2.2 does not.
         if isinstance(value, str) and (len(value) != 10 or value[4] != "-" or value[7] != "-"):
             raise ValueError("loss_date must be a calendar date YYYY-MM-DD")
         return value
@@ -50,6 +59,7 @@ class NotificationRequest(BaseModel):
     @field_validator("estimated_amount")
     @classmethod
     def estimated_amount_is_scale_2(cls, value: Decimal) -> Decimal:
+        # decimal_places=2 still accepts 4200 and 4200.0; section 2.2 does not.
         exponent = value.as_tuple().exponent
         if not isinstance(exponent, int) or exponent != -2:
             raise ValueError("estimated_amount must have exactly two decimal places")
@@ -76,7 +86,7 @@ class Policy(BaseModel):
     expiry_date: date
     cancellation_date: date | None
     limit: Decimal = Field(decimal_places=2)
-    permitted_claim_types: tuple[str, ...]
+    permitted_claim_types: tuple[ClaimType, ...]
 
     @field_validator("limit")
     @classmethod
@@ -86,6 +96,7 @@ class Policy(BaseModel):
             raise ValueError("limit must have exactly two decimal places")
         return value
 
+
 class RecordedNotification(BaseModel):
     """A notification that passed every rule and was written.
 
@@ -94,7 +105,9 @@ class RecordedNotification(BaseModel):
     job; this model only holds it.
     """
 
-    claim_reference: str
+    model_config = ConfigDict(extra="forbid")
+
+    claim_reference: str = Field(pattern=CLAIM_REFERENCE_PATTERN)
     notification: NotificationRequest
 
 

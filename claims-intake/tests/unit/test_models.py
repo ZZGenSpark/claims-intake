@@ -7,16 +7,24 @@ from dataclasses import FrozenInstanceError
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
 
-from claims.models import ErrorCode, NotificationRequest, Policy, RuleFailure, RuleId
+from claims.models import (
+    ClaimType,
+    ErrorCode,
+    NotificationRequest,
+    Policy,
+    RecordedNotification,
+    RuleFailure,
+    RuleId,
+)
 from claims.policy_client import PolicyRecord, StubPolicyClient
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
-MODEL_REJECTS = frozenset({"EDGE-08", "EDGE-12"})
+MODEL_REJECTS = frozenset({"EDGE-08", "EDGE-11", "EDGE-12"})
 
 VALID: dict[str, object] = {
     "policy_number": "MOT-4471",
@@ -61,7 +69,7 @@ def _policy_from_record(record: PolicyRecord) -> Policy:
         expiry_date=record.expiry_date,
         cancellation_date=record.cancellation_date,
         limit=record.limit,
-        permitted_claim_types=record.permitted_claim_types,
+        permitted_claim_types=cast(tuple[ClaimType, ...], record.permitted_claim_types),
     )
 
 
@@ -83,10 +91,13 @@ REALISTIC_CASES = _realistic_cases()
         pytest.param(_payload(description="Rear ended at a junction."), id="all_fields"),
         pytest.param(_without(), id="description_absent"),
         pytest.param(_payload(description=None), id="description_null"),
-        pytest.param(_payload(claim_type="flood"), id="claim_type_outside_vocabulary"),
+        pytest.param(_payload(claim_type="theft"), id="vocabulary_theft"),
+        pytest.param(_payload(claim_type="glass"), id="vocabulary_glass"),
+        pytest.param(_payload(claim_type="liability"), id="vocabulary_liability"),
+        pytest.param(_payload(claim_type="weather"), id="vocabulary_weather"),
     ],
 )
-def test_notification_request_accepts_well_formed_payload(payload: dict[str, object]) -> None:
+def test_notification_request_accepts_section_2_2_body(payload: dict[str, object]) -> None:
     notification = NotificationRequest.model_validate(payload)
     assert notification.loss_date == date(2026, 4, 2)
     assert notification.estimated_amount == Decimal("4200.00")
@@ -105,6 +116,7 @@ def test_notification_request_accepts_well_formed_payload(payload: dict[str, obj
         pytest.param(_without("estimated_amount"), id="missing_estimated_amount"),
         pytest.param(_payload(policy_number=""), id="empty_policy_number"),
         pytest.param(_payload(claim_type=""), id="empty_claim_type"),
+        pytest.param(_payload(claim_type="flood"), id="claim_type_outside_section_2_3"),
         pytest.param(_payload(policy_number=4471), id="policy_number_not_string"),
         pytest.param(_payload(loss_date=True), id="loss_date_not_date"),
         pytest.param(_payload(claim_type=["collision"]), id="claim_type_not_string"),
@@ -122,7 +134,9 @@ def test_notification_request_accepts_well_formed_payload(payload: dict[str, obj
         pytest.param(_payload(estimated_amount="-1.00"), id="negative_amount"),
     ],
 )
-def test_notification_request_rejects_invalid_payload(payload: dict[str, object]) -> None:
+def test_notification_request_rejects_uninterpretable_body(
+    payload: dict[str, object],
+) -> None:
     with pytest.raises(ValidationError):
         NotificationRequest.model_validate(payload)
 
@@ -151,7 +165,7 @@ def test_realistic_payloads_model_boundary(
         pytest.param("MOT-4496", True, id="cancelled"),
     ],
 )
-def test_policy_types_from_master(
+def test_policy_cancellation_date_is_absent_or_a_date(
     policy_client: StubPolicyClient,
     policy_number: str,
     expect_cancelled: bool,
@@ -173,10 +187,12 @@ def test_policy_types_from_master(
         pytest.param(_policy_body(expiry_date=True), id="expiry_date_wrong_type"),
         pytest.param(_policy_body(cancellation_date="not-a-date"), id="cancellation_date_wrong_type"),
         pytest.param(_policy_body(limit=True), id="limit_wrong_type"),
-        pytest.param(_policy_body(limit=Decimal("50000")), id="limit_wrong_scale"),
+        pytest.param(_policy_body(limit=Decimal(50000)), id="limit_wrong_scale"),
+        pytest.param(_policy_body(permitted_claim_types=("flood",)), id="permitted_type_outside_2_3"),
+        pytest.param(_policy_body(handler_notes="x"), id="unknown_field"),
     ],
 )
-def test_policy_rejects_invalid_field(body: dict[str, object]) -> None:
+def test_policy_rejects_uninterpretable_field(body: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         Policy.model_validate(body)
 
@@ -193,11 +209,39 @@ def test_policy_rejects_invalid_field(body: dict[str, object]) -> None:
         "permitted_claim_types",
     ],
 )
-def test_policy_rejects_missing_field(field: str) -> None:
+def test_policy_rejects_omitted_required_field(field: str) -> None:
     body = _policy_body()
     del body[field]
     with pytest.raises(ValidationError):
         Policy.model_validate(body)
+
+
+def test_recorded_notification_holds_section_3_reference() -> None:
+    notification = NotificationRequest.model_validate(VALID)
+    recorded = RecordedNotification(
+        claim_reference="CLM-2026-000317",
+        notification=notification,
+    )
+    assert recorded.claim_reference == "CLM-2026-000317"
+    assert recorded.notification is notification
+
+
+@pytest.mark.parametrize(
+    "claim_reference",
+    [
+        pytest.param("CLM-26-000317", id="year_not_four_digits"),
+        pytest.param("CLM-2026-317", id="sequence_not_six_digits"),
+        pytest.param("CLM-2026-000317-X", id="trailing_extra"),
+        pytest.param("clm-2026-000317", id="wrong_prefix_case"),
+        pytest.param("", id="empty"),
+    ],
+)
+def test_recorded_notification_rejects_reference_outside_section_3(
+    claim_reference: str,
+) -> None:
+    notification = NotificationRequest.model_validate(VALID)
+    with pytest.raises(ValidationError):
+        RecordedNotification(claim_reference=claim_reference, notification=notification)
 
 
 @pytest.mark.parametrize(
@@ -207,9 +251,9 @@ def test_policy_rejects_missing_field(field: str) -> None:
         pytest.param("V-6", "DUPLICATE_NOTIFICATION", id="duplicate"),
     ],
 )
-def test_rule_failure_carries_rule_and_code_separately(rule: str, code: str) -> None:
+def test_rule_failure_separates_rule_id_from_error_code(rule: str, code: str) -> None:
     failure = RuleFailure(rule=RuleId(rule), code=ErrorCode(code))
     assert failure.rule == rule
     assert failure.code == code
     with pytest.raises(FrozenInstanceError):
-        setattr(failure, "rule", "V-1")
+        failure.rule = RuleId("V-1")  # type: ignore[misc]

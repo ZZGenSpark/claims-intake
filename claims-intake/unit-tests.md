@@ -10,7 +10,7 @@ Fixtures return a fresh object each time. Multiple inputs use `@pytest.mark.para
 
 ## `tests/unit/test_models.py`
 
-### `test_notification_request_accepts_well_formed_payload`
+### `test_notification_request_accepts_section_2_2_body`
 
 Parses a valid payload. `loss_date` is a `date`. `estimated_amount` is a `Decimal`.
 
@@ -19,11 +19,14 @@ Parses a valid payload. `loss_date` is a `date`. `estimated_amount` is a `Decima
 | `all_fields` | All five fields present |
 | `description_absent` | Optional `description` omitted; equivalent to null |
 | `description_null` | `description: null` |
-| `claim_type_outside_vocabulary` | `"flood"` still parses; V-5 is not the model's job |
+| `vocabulary_theft` | Section 2.3 value |
+| `vocabulary_glass` | Section 2.3 value |
+| `vocabulary_liability` | Section 2.3 value |
+| `vocabulary_weather` | Section 2.3 value |
 
-### `test_notification_request_rejects_invalid_payload`
+### `test_notification_request_rejects_uninterpretable_body`
 
-Raises `ValidationError`.
+Raises `ValidationError`. HTTP mapping is section 6 `UNINTERPRETABLE_REQUEST`.
 
 | Case | Constraint violated |
 | --- | --- |
@@ -34,7 +37,8 @@ Raises `ValidationError`.
 | `missing_claim_type` | Required field |
 | `missing_estimated_amount` | Required field (EDGE-08) |
 | `empty_policy_number` | Not empty |
-| `empty_claim_type` | Not empty |
+| `empty_claim_type` | Not empty / not in 2.3 |
+| `claim_type_outside_section_2_3` | `"flood"` is not in 2.3 |
 | `policy_number_not_string` | Wrong type |
 | `loss_date_not_date` | Wrong type |
 | `claim_type_not_string` | Wrong type |
@@ -74,19 +78,19 @@ Each payload in `data/fnol_invalid.json` and `data/fnol_edge.json`. Asserts only
 | EDGE-08 | **reject** | never a rule |
 | EDGE-09 | accept | V-5 |
 | EDGE-10 | accept | V-7 |
-| EDGE-11 | accept | V-5 (`flood` is a string) |
+| EDGE-11 | **reject** | never a rule (`flood`) |
 | EDGE-12 | **reject** | never a rule |
 
-### `test_policy_types_from_master`
+### `test_policy_cancellation_date_is_absent_or_a_date`
 
-Builds `Policy` from `StubPolicyClient`. Dates are `date`. `limit` is `Decimal`.
+Builds `Policy` from `StubPolicyClient`. Dates are `date`. `limit` is `Decimal`. WI-0158 AC-3: uncancelled is `None`.
 
 | Case | Policy | `cancellation_date` |
 | --- | --- | --- |
 | `uncancelled` | MOT-4471 | `None` |
 | `cancelled` | MOT-4496 | a `date` |
 
-### `test_policy_rejects_invalid_field`
+### `test_policy_rejects_uninterpretable_field`
 
 Raises `ValidationError`.
 
@@ -97,22 +101,28 @@ Raises `ValidationError`.
 | `cancellation_date_wrong_type` | Must be a date or `None` |
 | `limit_wrong_type` | Must be a decimal |
 | `limit_wrong_scale` | Scale 2 |
+| `permitted_type_outside_2_3` | Same vocabulary as 2.3 |
+| `unknown_field` | Extra field |
 
-### `test_policy_rejects_missing_field`
+### `test_policy_rejects_omitted_required_field`
 
 Each required field omitted, including `cancellation_date`. `None` is allowed; omitting the field is not.
 
-| Case |
-| --- |
-| `policy_number` |
-| `product` |
-| `effective_date` |
-| `expiry_date` |
-| `cancellation_date` |
-| `limit` |
-| `permitted_claim_types` |
+### `test_recorded_notification_holds_section_3_reference`
 
-### `test_rule_failure_carries_rule_and_code_separately`
+Holds `CLM-2026-000317` and the original notification.
+
+### `test_recorded_notification_rejects_reference_outside_section_3`
+
+| Case | Constraint violated |
+| --- | --- |
+| `year_not_four_digits` | `CLM-YYYY-NNNNNN` |
+| `sequence_not_six_digits` | `CLM-YYYY-NNNNNN` |
+| `trailing_extra` | Exact pattern |
+| `wrong_prefix_case` | `CLM` prefix |
+| `empty` | Required |
+
+### `test_rule_failure_separates_rule_id_from_error_code`
 
 `rule` and `code` are distinct fields. The object is immutable.
 
@@ -121,13 +131,17 @@ Each required field omitted, including `cancellation_date`. `None` is allowed; o
 | `inception` | V-2 | `LOSS_BEFORE_INCEPTION` |
 | `duplicate` | V-6 | `DUPLICATE_NOTIFICATION` |
 
-Not in this file: claim-reference format. `RecordedNotification` only holds the reference. Issuing it is the repository's job.
+Issuing a reference is the repository's job.
 
 ---
 
 ## `tests/unit/test_repository.py`
 
 Fixtures: `repository` is a new store per test. `make_notification` builds a fresh `NotificationRequest` (`date` and `Decimal`, not strings).
+
+### `test_issue_claim_reference_matches_section_3_and_is_never_reissued`
+
+Calls `issue_claim_reference` twice without recording. Both match `CLM-YYYY-NNNNNN`. They differ.
 
 ### `test_record_issues_unique_contract_references`
 

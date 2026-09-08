@@ -53,13 +53,11 @@ The service rejects a body carrying a field not listed above. A misspelled field
 
 `collision`, `theft`, `glass`, `liability`, `weather`.
 
-Which of these are admissible on a given notification depends on the product the policy is written on. The vocabulary is fixed by this contract. The permitted subset is a property of the policy record and is evaluated by rule `V-5`.
-
-A `claim_type` that is a string but not in this list is still interpreted. It fails V-5. It is not `UNINTERPRETABLE_REQUEST`.
+Which of these are admissible on a given notification depends on the product the policy is written on. The vocabulary is the type of `claim_type`. A value not in this list cannot be interpreted. The permitted subset of that vocabulary is a property of the policy record and is evaluated by rule `V-5`.
 
 ### 2.4 Well formed against acceptable
 
-A request that cannot be interpreted is refused with status `400`. This means the body was not valid JSON, a required field was absent, a field carried a value of the wrong type, or a field was present that this contract does not define. The caller's code is wrong. An `estimated_amount` that is not a decimal of scale 2 is the wrong type. A string `claim_type` that is not in section 2.3 is not.
+A request that cannot be interpreted is refused with status `400`. This means the body was not valid JSON, a required field was absent, a field carried a value of the wrong type, a field was present that this contract does not define, a required string was empty, `loss_date` was not a calendar date `YYYY-MM-DD`, `estimated_amount` was not a decimal of scale 2, `estimated_amount` was not greater than zero, or `claim_type` was not one of the values in section 2.3. The caller's code is wrong. The service does not round or truncate.
 
 A request that was interpreted and whose content is not admissible is refused with status `422`. The caller's data is wrong, and a person needs to see the reason.
 
@@ -129,8 +127,10 @@ on the cancellation date is not covered (WI-0158, AC-2): V-7 uses a
 strict inequality, so `loss_date` < `cancellation_date` is required to
 pass. When both V-3 and V-7 would fail, the order in 4.1 returns
 `POLICY_CANCELLED`. V-1 lookup is exact; case is significant. A
-`claim_type` outside section 2.3 fails V-5; it is not a 400. V-4
-compares only a well-formed scale-2 amount to the limit.
+`claim_type` outside section 2.3 never reaches V-5; it is
+`UNINTERPRETABLE_REQUEST`. V-5 compares a vocabulary value to the
+product's permitted subset. V-4 compares only a well-formed scale-2
+amount greater than zero to the limit.
 
 ## 5. Error envelope
 
@@ -220,7 +220,7 @@ a request `field`. The same request may succeed later.
 
 | Code                        | Status | Source                                      |
 | --------------------------- | ------ | ------------------------------------------- |
-| `UNINTERPRETABLE_REQUEST`   | 400    | Body could not be interpreted (section 2.4) |
+| `UNINTERPRETABLE_REQUEST`   | 400    | Body could not be interpreted (section 2.4), including empty required strings, `claim_type` outside 2.3, `estimated_amount` not greater than zero, and `loss_date` not `YYYY-MM-DD` |
 | `DUPLICATE_NOTIFICATION`    | 409    | V-6                                         |
 | `POLICY_NOT_FOUND`          | 422    | V-1. Master answered; no match              |
 | `LOSS_BEFORE_INCEPTION`     | 422    | V-2                                         |
