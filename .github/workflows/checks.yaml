@@ -6,13 +6,7 @@ jobs:
   checks:
     runs-on: ubuntu-24.04
     steps:
-      - name: Fetch repository
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git init
-          git fetch --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${GITHUB_REF}"
-          git checkout FETCH_HEAD
+      - uses: actions/checkout@v4
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
