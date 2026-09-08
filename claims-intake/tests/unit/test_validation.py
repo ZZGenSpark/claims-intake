@@ -111,7 +111,6 @@ def test_v1_policy_exists(
     assert outcome.passed is False
     assert outcome.rule == expected_rule
     assert outcome.code == expected_code
-    assert expected_code != "LOSS_BEFORE_INCEPTION"
     assert (
         repository.find_matching(
             notification.policy_number,
@@ -130,12 +129,30 @@ def test_v1_policy_exists(
         pytest.param(date(2026, 3, 2), False, id="after_inception"),
     ],
 )
-def test_v2_loss_on_or_after_inception(loss_date: date, expect_failure: bool) -> None:
-    result = evaluate_notification(_notification(loss_date=loss_date), _policy())
+def test_v2_loss_on_or_after_inception(
+    policy_client: StubPolicyClient,
+    repository: NotificationRepository,
+    loss_date: date,
+    expect_failure: bool,
+) -> None:
+    notification = _notification(loss_date=loss_date)
+    result = evaluate_notification(notification, _policy())
     if expect_failure:
         _assert_rule_failure(result, "V-2", "LOSS_BEFORE_INCEPTION")
-    else:
-        assert result is None
+        outcome = submit_notification(notification, policy_client, repository)
+        assert outcome.passed is False
+        assert outcome.rule == "V-2"
+        assert outcome.code == "LOSS_BEFORE_INCEPTION"
+        assert (
+            repository.find_matching(
+                notification.policy_number,
+                notification.loss_date,
+                notification.claim_type,
+            )
+            is None
+        )
+        return
+    assert result is None
 
 
 @pytest.mark.parametrize(
@@ -177,6 +194,7 @@ def test_v4_amount_within_limit(amount: Decimal, expect_failure: bool) -> None:
     ("claim_type", "expect_failure"),
     [
         pytest.param("collision", False, id="type_in_subset"),
+        pytest.param("theft", False, id="type_equals_permitted_entry"),
         pytest.param("glass", True, id="type_not_in_subset"),
     ],
 )
@@ -192,6 +210,7 @@ def test_v5_claim_type_permitted(claim_type: ClaimType, expect_failure: bool) ->
     "case_id",
     [
         pytest.param("all_three_match", id="all_three_match"),
+        pytest.param("amount_differs_still_duplicate", id="amount_differs_still_duplicate"),
         pytest.param("type_differs", id="type_differs"),
         pytest.param("date_differs", id="date_differs"),
         pytest.param("policy_differs", id="policy_differs"),
@@ -242,11 +261,17 @@ def test_v6_duplicate_of_recorded_only(
     )
     assert first_match is not None
 
-    if case_id == "all_three_match":
-        second = submit_notification(_notification(), policy_client, repository)
+    if case_id in ("all_three_match", "amount_differs_still_duplicate"):
+        second_notification = (
+            _notification()
+            if case_id == "all_three_match"
+            else _notification(estimated_amount=Decimal("4300.00"))
+        )
+        second = submit_notification(second_notification, policy_client, repository)
         assert second.passed is False
         assert second.rule == "V-6"
         assert second.code == "DUPLICATE_NOTIFICATION"
+        assert second.detail["claim_reference"] == first_match.claim_reference
         still = repository.find_matching(
             first.policy_number,
             first.loss_date,
@@ -344,12 +369,27 @@ def test_policy_lookup_failed_propagates(
     assert caught.value.reason == reason
 
 
-def test_evaluate_notification_stops_at_first_rule() -> None:
-    result = evaluate_notification(
-        _notification(
-            loss_date=date(2026, 2, 28),
-            estimated_amount=Decimal("50000.01"),
+@pytest.mark.parametrize(
+    ("changes", "expected_rule", "expected_code"),
+    [
+        pytest.param(
+            {"loss_date": date(2026, 2, 28), "estimated_amount": Decimal("50000.01")},
+            "V-2",
+            "LOSS_BEFORE_INCEPTION",
+            id="v2_before_v4",
         ),
-        _policy(),
-    )
-    _assert_rule_failure(result, "V-2", "LOSS_BEFORE_INCEPTION")
+        pytest.param(
+            {"estimated_amount": Decimal("50000.01"), "claim_type": "glass"},
+            "V-4",
+            "AMOUNT_EXCEEDS_LIMIT",
+            id="v4_before_v5",
+        ),
+    ],
+)
+def test_evaluate_notification_stops_at_first_rule(
+    changes: dict[str, object],
+    expected_rule: str,
+    expected_code: str,
+) -> None:
+    result = evaluate_notification(_notification(**changes), _policy())
+    _assert_rule_failure(result, expected_rule, expected_code)
