@@ -20,10 +20,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
-from claims.models import ErrorCode, NotificationRequest, Policy, RuleFailure, RuleId
-from claims.policy_client import PolicyClient, PolicyNotFound
+from claims.models import ClaimType, ErrorCode, NotificationRequest, Policy, RuleFailure, RuleId
+from claims.policy_client import PolicyClient, PolicyNotFound, PolicyRecord
 from claims.repository import NotificationRepository
 
 
@@ -82,6 +82,32 @@ def evaluate_policy_exists(
             policy_number=notification.policy_number,
         )
     return ValidationOutcome.ok()
+
+
+def _policy_from_record(record: PolicyRecord) -> Policy:
+    """Build the service Policy from the master's record."""
+    return Policy(
+        policy_number=record.policy_number,
+        product=record.product,
+        effective_date=record.effective_date,
+        expiry_date=record.expiry_date,
+        cancellation_date=record.cancellation_date,
+        limit=record.limit,
+        permitted_claim_types=cast(tuple[ClaimType, ...], record.permitted_claim_types),
+    )
+
+
+def _policy_from_record(record: PolicyRecord) -> Policy:
+    """Build the service Policy from the master's record."""
+    return Policy(
+        policy_number=record.policy_number,
+        product=record.product,
+        effective_date=record.effective_date,
+        expiry_date=record.expiry_date,
+        cancellation_date=record.cancellation_date,
+        limit=record.limit,
+        permitted_claim_types=cast(tuple[ClaimType, ...], record.permitted_claim_types),
+    )
 
 
 def evaluate_loss_after_inception(
@@ -237,5 +263,22 @@ def submit_notification(
 
     Owns V-1 (policy lookup) and V-6 (duplicate check). POLICY_RULES run in
     between through evaluate_notification. See the comment on POLICY_RULES.
+
+    PolicyNotFound is caught and returned as V-1. PolicyLookupFailed is not
+    caught: this layer cannot answer it, and the HTTP layer needs `reason`.
     """
+    try:
+        record = policy_client.get_policy(notification.policy_number)
+    except PolicyNotFound:
+        return ValidationOutcome.failed(
+            rule="V-1",
+            code="POLICY_NOT_FOUND",
+            policy_number=notification.policy_number,
+        )
+
+    failure = evaluate_notification(notification, _policy_from_record(record))
+    if failure is not None:
+        return ValidationOutcome.failed(rule=failure.rule, code=failure.code)
+
+    repository.record(notification)
     return ValidationOutcome.ok()
