@@ -18,6 +18,7 @@ Day 3 assignment. Build the remaining rules test-first against
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -130,17 +131,59 @@ def evaluate_loss_before_cancellation(
     return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
 
 
+def evaluate_duplicate_notification(
+    notification: NotificationRequest,
+    repository: NotificationRepository,
+) -> ValidationOutcome:
+    """V-6. Duplicate of a recorded notification.
+
+    Takes the repository because a duplicate is a fact about what was written,
+    not a fact about the policy. This function is not in POLICY_RULES.
+    """
+    return ValidationOutcome.failed("UNIMPLEMENTED", "UNIMPLEMENTED")
+
+
+# Where V-6 lives (contract section 4.1).
+#
+# Evaluation order the caller sees is V-1, V-7, V-2, V-3, V-4, V-5, V-6, stopping
+# at the first failure. That order is assembled in three places, not one table:
+#
+#   V-1  submit_notification, from PolicyNotFound. The master answered "no".
+#        POLICY_RULES never sees a missing policy (WI-0142 AC-4).
+#   V-7, V-2, V-3, V-4, V-5  POLICY_RULES. Each entry is (notification, policy)
+#        only. Deciding, no I/O.
+#   V-6  submit_notification, after evaluate_notification returns None, via
+#        evaluate_duplicate_notification and repository.find_matching.
+#
+# V-6 is last because a notification that already failed is not recorded, so it
+# cannot be a duplicate (WI-0151 AC-3; contract 4.1). Putting find_matching
+# inside POLICY_RULES would make the decision table depend on the store and
+# would break evaluate_notification's C3 shape: (notification, policy) only.
+PolicyRule = Callable[[NotificationRequest, Policy], ValidationOutcome]
+POLICY_RULES: Sequence[PolicyRule] = (
+    evaluate_loss_before_cancellation,
+    evaluate_loss_after_inception,
+    evaluate_loss_before_expiry,
+    evaluate_amount_within_limit,
+    evaluate_claim_type_covered,
+)
+
+
 def evaluate_notification(
     notification: NotificationRequest,
     policy: Policy,
 ) -> RuleFailure | None:
-    """Evaluate the policy-local rules and return the first failure.
+    """Evaluate POLICY_RULES in contract 4.1 order and return the first failure.
 
-    Takes only a notification and a policy. A dummy refusal is returned until the
-    rules are implemented, so tests fail on their assertions rather than on a
-    missing name or NotImplementedError.
+    Takes only a notification and a policy. V-1 and V-6 are not run here; see
+    the comment on POLICY_RULES.
     """
-    return RuleFailure(rule=RuleId("UNIMPLEMENTED"), code=ErrorCode("UNIMPLEMENTED"))
+    for rule_fn in POLICY_RULES:
+        outcome = rule_fn(notification, policy)
+        if outcome.passed or outcome.rule is None or outcome.code is None:
+            continue
+        return RuleFailure(rule=RuleId(outcome.rule), code=ErrorCode(outcome.code))
+    return None
 
 
 def submit_notification(
@@ -150,7 +193,7 @@ def submit_notification(
 ) -> ValidationOutcome:
     """Validate, and record only if every rule passed.
 
-    Returns an empty success until orchestration is implemented, so tests fail on
-    their assertions rather than on NotImplementedError.
+    Owns V-1 (policy lookup) and V-6 (duplicate check). POLICY_RULES run in
+    between through evaluate_notification. See the comment on POLICY_RULES.
     """
     return ValidationOutcome.ok()
