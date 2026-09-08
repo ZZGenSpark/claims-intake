@@ -7,9 +7,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Fetch repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git init
-          git fetch --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "${GITHUB_REF}"
+          git fetch --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${GITHUB_REF}"
           git checkout FETCH_HEAD
       - name: Install uv
         run: |
