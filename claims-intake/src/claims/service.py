@@ -97,19 +97,6 @@ def _policy_from_record(record: PolicyRecord) -> Policy:
     )
 
 
-def _policy_from_record(record: PolicyRecord) -> Policy:
-    """Build the service Policy from the master's record."""
-    return Policy(
-        policy_number=record.policy_number,
-        product=record.product,
-        effective_date=record.effective_date,
-        expiry_date=record.expiry_date,
-        cancellation_date=record.cancellation_date,
-        limit=record.limit,
-        permitted_claim_types=cast(tuple[ClaimType, ...], record.permitted_claim_types),
-    )
-
-
 def evaluate_loss_after_inception(
     notification: NotificationRequest,
     policy: Policy,
