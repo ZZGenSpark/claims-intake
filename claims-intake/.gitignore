@@ -23,3 +23,7 @@ __pycache__/
 
 #worktrees
 .worktrees
+
+# Local session notes; not a deliverable (also ignored at repo root)
+doc/day_3.md
+docs/day_3.md
