@@ -59,14 +59,14 @@ def test_accepted_notification_returns_201_with_claim_reference(client: TestClie
 
 
 @pytest.mark.parametrize(
-    ("case_id", "status", "code", "rule", "detail_keys"),
+    ("case_id", "status", "code", "rule", "expected_detail"),
     [
         pytest.param(
             "INVALID-01",
             422,
             "POLICY_NOT_FOUND",
             "V-1",
-            ("policy_number",),
+            {"policy_number": "MOT-9999"},
             id="v1",
         ),
         pytest.param(
@@ -74,7 +74,7 @@ def test_accepted_notification_returns_201_with_claim_reference(client: TestClie
             422,
             "LOSS_BEFORE_INCEPTION",
             "V-2",
-            ("loss_date", "effective_date"),
+            {"loss_date": "2026-02-20", "effective_date": "2026-03-15"},
             id="v2",
         ),
         pytest.param(
@@ -82,7 +82,7 @@ def test_accepted_notification_returns_201_with_claim_reference(client: TestClie
             422,
             "LOSS_AFTER_EXPIRY",
             "V-3",
-            ("loss_date", "expiry_date"),
+            {"loss_date": "2026-03-20", "expiry_date": "2026-02-28"},
             id="v3",
         ),
         pytest.param(
@@ -90,7 +90,7 @@ def test_accepted_notification_returns_201_with_claim_reference(client: TestClie
             422,
             "AMOUNT_EXCEEDS_LIMIT",
             "V-4",
-            ("estimated_amount", "limit"),
+            {"estimated_amount": "14500.00", "limit": "10000.00"},
             id="v4",
         ),
         pytest.param(
@@ -98,7 +98,7 @@ def test_accepted_notification_returns_201_with_claim_reference(client: TestClie
             422,
             "TYPE_NOT_COVERED",
             "V-5",
-            ("claim_type", "permitted_claim_types"),
+            {"claim_type": "collision", "permitted_claim_types": ["liability"]},
             id="v5",
         ),
         pytest.param(
@@ -106,7 +106,7 @@ def test_accepted_notification_returns_201_with_claim_reference(client: TestClie
             422,
             "POLICY_CANCELLED",
             "V-7",
-            ("loss_date", "cancellation_date"),
+            {"loss_date": "2026-03-05", "cancellation_date": "2026-02-01"},
             id="v7",
         ),
     ],
@@ -117,23 +117,13 @@ def test_each_policy_rule_refusal_through_http(
     status: int,
     code: str,
     rule: str,
-    detail_keys: tuple[str, ...],
+    expected_detail: dict[str, Any],
 ) -> None:
-    payload = _INVALID[case_id]
-    response = client.post("/notifications", json=payload)
+    response = client.post("/notifications", json=_INVALID[case_id])
     assert response.status_code == status
     body = response.json()
     assert body["code"] == code
-    detail = body["detail"]
-    assert detail["rule"] == rule
-    for key in detail_keys:
-        assert key in detail
-    if "policy_number" in detail_keys:
-        assert detail["policy_number"] == payload["policy_number"]
-    if "loss_date" in detail_keys:
-        assert detail["loss_date"] == payload["loss_date"]
-    if "claim_type" in detail_keys:
-        assert detail["claim_type"] == payload["claim_type"]
+    assert body["detail"] == {"rule": rule, **expected_detail}
 
 
 def test_duplicate_notification_returns_409_with_existing_reference(
@@ -153,23 +143,41 @@ def test_duplicate_notification_returns_409_with_existing_reference(
 
 def test_missing_required_field_returns_400(client: TestClient) -> None:
     response = client.post("/notifications", json=_EDGE["EDGE-08"])
-    assert response.status_code == 400
-    body = response.json()
-    assert body["code"] == "UNINTERPRETABLE_REQUEST"
-    assert body["detail"]["field"] == "estimated_amount"
-    assert body["detail"]["issue"] == "required_field_missing"
-    assert "rule" not in body["detail"]
+    _assert_uninterpretable(response, field="estimated_amount", issue="required_field_missing")
 
 
 def test_extra_field_returns_400(client: TestClient) -> None:
     payload = {**_VALID["VALID-01"], "handler_notes": "ignored would be a defect"}
     response = client.post("/notifications", json=payload)
+    _assert_uninterpretable(response, field="handler_notes", issue="unexpected_field")
+
+
+def test_claim_type_outside_vocabulary_returns_400_not_v5(client: TestClient) -> None:
+    response = client.post("/notifications", json=_EDGE["EDGE-11"])
+    _assert_uninterpretable(response, field="claim_type", issue="value_not_in_vocabulary")
+    assert response.json()["code"] != "TYPE_NOT_COVERED"
+
+
+def test_amount_wrong_scale_returns_400_not_v4(client: TestClient) -> None:
+    response = client.post("/notifications", json=_EDGE["EDGE-12"])
+    _assert_uninterpretable(response, field="estimated_amount", issue="invalid_scale")
+    assert response.json()["code"] != "AMOUNT_EXCEEDS_LIMIT"
+
+
+def test_invalid_json_returns_400(client: TestClient) -> None:
+    response = client.post(
+        "/notifications",
+        content=b"{not json",
+        headers={"content-type": "application/json"},
+    )
+    _assert_uninterpretable(response, field="body", issue="invalid_json")
+
+
+def _assert_uninterpretable(response: Any, *, field: str, issue: str) -> None:
     assert response.status_code == 400
     body = response.json()
     assert body["code"] == "UNINTERPRETABLE_REQUEST"
-    assert body["detail"]["field"] == "handler_notes"
-    assert body["detail"]["issue"] == "unexpected_field"
-    assert "rule" not in body["detail"]
+    assert body["detail"] == {"field": field, "issue": issue}
 
 
 @pytest.mark.parametrize(

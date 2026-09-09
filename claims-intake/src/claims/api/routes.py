@@ -10,11 +10,12 @@ Day 4 lab. Implement against `docs/api-contract.md` sections 5 and 6.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date
+from decimal import Decimal
 from json import JSONDecodeError
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -111,10 +112,23 @@ def create_app(
     return app
 
 
+def _jsonable(value: Any) -> Any:
+    """JSON for the envelope. Dates stay YYYY-MM-DD; decimals keep scale 2 as strings."""
+    if isinstance(value, Decimal):
+        return f"{value:.2f}"
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    return value
+
+
 def _envelope(status: int, code: str, message: str, detail: dict[str, Any]) -> JSONResponse:
     return JSONResponse(
         status_code=status,
-        content={"code": code, "message": message, "detail": jsonable_encoder(detail)},
+        content={"code": code, "message": message, "detail": _jsonable(detail)},
     )
 
 
