@@ -99,14 +99,13 @@ def test_v1_policy_exists(
     outcome = submit_notification(notification, policy_client, repository)
     if expected_rule is None:
         assert outcome.passed is True
-        assert (
-            repository.find_matching(
-                notification.policy_number,
-                notification.loss_date,
-                notification.claim_type,
-            )
-            is not None
+        recorded = repository.find_matching(
+            notification.policy_number,
+            notification.loss_date,
+            notification.claim_type,
         )
+        assert recorded is not None
+        assert outcome.claim_reference == recorded.claim_reference
         return
     assert outcome.passed is False
     assert outcome.rule == expected_rule
@@ -139,10 +138,15 @@ def test_v2_loss_on_or_after_inception(
     result = evaluate_notification(notification, _policy())
     if expect_failure:
         _assert_rule_failure(result, "V-2", "LOSS_BEFORE_INCEPTION")
+        assert result is not None
+        assert result.detail["loss_date"] == loss_date
+        assert result.detail["effective_date"] == date(2026, 3, 1)
         outcome = submit_notification(notification, policy_client, repository)
         assert outcome.passed is False
         assert outcome.rule == "V-2"
         assert outcome.code == "LOSS_BEFORE_INCEPTION"
+        assert outcome.detail["loss_date"] == loss_date
+        assert outcome.detail["effective_date"] == date(2026, 3, 1)
         assert (
             repository.find_matching(
                 notification.policy_number,

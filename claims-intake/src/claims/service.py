@@ -34,7 +34,8 @@ class ValidationOutcome:
     `passed` is the only thing a caller has to branch on. When it is false, `rule`
     names the rule that decided it, `code` is the stable contract code, and
     `detail` carries the values that produced the decision so that the person
-    reading the eventual error can see which input was wrong.
+    reading the eventual error can see which input was wrong. When it is true,
+    `claim_reference` is the value issued at record time.
 
     There is no status code here. Contract section 6 maps a code to a status, and
     that mapping is applied at the HTTP boundary.
@@ -44,10 +45,11 @@ class ValidationOutcome:
     rule: str | None = None
     code: str | None = None
     detail: dict[str, Any] = field(default_factory=dict)
+    claim_reference: str | None = None
 
     @classmethod
-    def ok(cls) -> ValidationOutcome:
-        return cls(passed=True)
+    def ok(cls, claim_reference: str | None = None) -> ValidationOutcome:
+        return cls(passed=True, claim_reference=claim_reference)
 
     @classmethod
     def failed(cls, rule: str, code: str, **detail: Any) -> ValidationOutcome:
@@ -248,7 +250,11 @@ def evaluate_notification(
         outcome = rule_fn(notification, policy)
         if outcome.passed or outcome.rule is None or outcome.code is None:
             continue
-        return RuleFailure(rule=RuleId(outcome.rule), code=ErrorCode(outcome.code))
+        return RuleFailure(
+            rule=RuleId(outcome.rule),
+            code=ErrorCode(outcome.code),
+            detail=dict(outcome.detail),
+        )
     return None
 
 
@@ -276,11 +282,15 @@ def submit_notification(
 
     failure = evaluate_notification(notification, _policy_from_record(record))
     if failure is not None:
-        return ValidationOutcome.failed(rule=failure.rule, code=failure.code)
+        return ValidationOutcome.failed(
+            rule=failure.rule,
+            code=failure.code,
+            **failure.detail,
+        )
 
     duplicate = evaluate_duplicate_notification(notification, repository)
     if not duplicate.passed:
         return duplicate
 
-    repository.record(notification)
-    return ValidationOutcome.ok()
+    recorded = repository.record(notification)
+    return ValidationOutcome.ok(claim_reference=recorded.claim_reference)

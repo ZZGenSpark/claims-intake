@@ -10,10 +10,10 @@ Day 2 assignment. Implement these against `docs/api-contract.md` sections 2 and 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Literal, NewType
+from typing import Any, Literal, NewType
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -118,8 +118,9 @@ class RuleFailure:
     `rule` is a `RuleId` (`V-1`, `V-2`, …). `code` is an `ErrorCode`
     (`POLICY_NOT_FOUND`, …). Separate NewTypes mean a rule identifier cannot be
     passed where an error code is expected. Frozen so a later layer cannot
-    rewrite the decision.
+    rewrite the decision. `detail` is the compared values the rule used.
     """
 
     rule: RuleId
     code: ErrorCode
+    detail: dict[str, Any] = field(default_factory=dict)

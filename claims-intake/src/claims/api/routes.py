@@ -62,27 +62,19 @@ def create_app(
         notification = NotificationRequest.model_validate(body)
         outcome = submit_notification(notification, client, store)
         if outcome.passed:
-            return _recorded_response(notification, store)
+            return _recorded_response(outcome)
         return _rule_failure_response(outcome)
 
     return app
 
 
-def _recorded_response(
-    notification: NotificationRequest,
-    store: NotificationRepository,
-) -> JSONResponse:
-    recorded = store.find_matching(
-        notification.policy_number,
-        notification.loss_date,
-        notification.claim_type,
-    )
-    if recorded is None:
-        raise RuntimeError("submit passed but no recorded notification was found")
+def _recorded_response(outcome: ValidationOutcome) -> JSONResponse:
+    if outcome.claim_reference is None:
+        raise RuntimeError("submit passed but issued no claim reference")
     return JSONResponse(
         status_code=201,
         content={
-            "claim_reference": recorded.claim_reference,
+            "claim_reference": outcome.claim_reference,
             "status": "recorded",
         },
     )
