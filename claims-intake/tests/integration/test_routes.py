@@ -1,7 +1,7 @@
-"""HTTP integration tests for accepted and refused notifications.
+"""HTTP integration tests for notification outcomes.
 
 These tests exercise POST /notifications. They do not call submit_notification.
-Fixtures live here so this module does not share store state with other tests.
+Each test builds its own app, policy client, and repository so order cannot leak.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from claims.api.routes import create_app
 from claims.models import CLAIM_REFERENCE_PATTERN
-from claims.policy_client import StubPolicyClient
+from claims.policy_client import LookupFailureReason, StubPolicyClient
 from claims.repository import NotificationRepository
 
 DATA = Path(__file__).resolve().parents[2] / "data"
@@ -30,16 +30,24 @@ _INVALID: dict[str, dict[str, Any]] = {
     case["id"]: case["payload"]
     for case in json.loads((DATA / "fnol_invalid.json").read_text())
 }
+_EDGE: dict[str, dict[str, Any]] = {
+    case["id"]: case["payload"]
+    for case in json.loads((DATA / "fnol_edge.json").read_text())
+}
+
+
+def _http_client(*, fail_with: LookupFailureReason | None = None) -> TestClient:
+    return TestClient(
+        create_app(
+            policy_client=StubPolicyClient(fail_with=fail_with),
+            repository=NotificationRepository(),
+        )
+    )
 
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(
-        create_app(
-            policy_client=StubPolicyClient(),
-            repository=NotificationRepository(),
-        )
-    )
+    return _http_client()
 
 
 def test_accepted_notification_returns_201_with_claim_reference(client: TestClient) -> None:
@@ -141,3 +149,47 @@ def test_duplicate_notification_returns_409_with_existing_reference(
     assert body["code"] == "DUPLICATE_NOTIFICATION"
     assert body["detail"]["rule"] == "V-6"
     assert body["detail"]["claim_reference"] == recorded
+
+
+def test_missing_required_field_returns_400(client: TestClient) -> None:
+    response = client.post("/notifications", json=_EDGE["EDGE-08"])
+    assert response.status_code == 400
+    body = response.json()
+    assert body["code"] == "UNINTERPRETABLE_REQUEST"
+    assert body["detail"]["field"] == "estimated_amount"
+    assert body["detail"]["issue"] == "required_field_missing"
+    assert "rule" not in body["detail"]
+
+
+def test_extra_field_returns_400(client: TestClient) -> None:
+    payload = {**_VALID["VALID-01"], "handler_notes": "ignored would be a defect"}
+    response = client.post("/notifications", json=payload)
+    assert response.status_code == 400
+    body = response.json()
+    assert body["code"] == "UNINTERPRETABLE_REQUEST"
+    assert body["detail"]["field"] == "handler_notes"
+    assert body["detail"]["issue"] == "unexpected_field"
+    assert "rule" not in body["detail"]
+
+
+@pytest.mark.parametrize(
+    ("reason", "status", "code"),
+    [
+        pytest.param("timeout", 504, "POLICY_MASTER_TIMEOUT", id="timeout"),
+        pytest.param("unreachable", 503, "POLICY_MASTER_UNREACHABLE", id="unreachable"),
+        pytest.param("unparsable", 502, "POLICY_MASTER_UNPARSABLE", id="unparsable"),
+    ],
+)
+def test_policy_lookup_failed_returns_distinct_5xx(
+    reason: LookupFailureReason,
+    status: int,
+    code: str,
+) -> None:
+    http = _http_client(fail_with=reason)
+    response = http.post("/notifications", json=_VALID["VALID-01"])
+    assert response.status_code == status
+    assert response.status_code >= 500
+    body = response.json()
+    assert body["code"] == code
+    assert body["detail"] == {"policy_number": _VALID["VALID-01"]["policy_number"]}
+    assert "rule" not in body["detail"]
