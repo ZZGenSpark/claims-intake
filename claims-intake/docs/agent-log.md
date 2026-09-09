@@ -4,6 +4,14 @@ Two changes produced during this assignment. Each decision cites a contract
 section, a work-item criterion, or a failure that would have followed. Preference
 is not a reason.
 
+## Step 8. Gate observation
+
+[Pull request #3](https://github.com/ZZGenSpark/claims-intake/pull/3)
+(`3cde809`, `test_gate_probe.py`) failed the required `checks` jobs
+(`pull_request` and `push`). The Merge button was disabled; GitHub
+stated "Merging is blocked due to failing merge requirements." A
+failing required check blocked the merge.
+
 ## Accepted. V-6 stays off `POLICY_RULES`
 
 **What the agent produced.** A `POLICY_RULES` table of `(notification, policy)`
